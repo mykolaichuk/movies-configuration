@@ -1,0 +1,30 @@
+# Static checks shared by validate.yml and configure.yml.
+# Nothing here talks to Azure or to the VMs: safe for any branch or PR.
+
+steps:
+  - checkout: self
+    fetchDepth: 0 # gitleaks scans the whole history
+
+  # The agent is immutable (movies-infra bootstrap cloud-init). If a tool is
+  # missing, fail here with a clear list instead of halfway through a stage.
+  - script: |
+      missing=""
+      for t in az ansible-playbook ansible-lint sqlcmd gitleaks npx jq; do
+        command -v "$t" >/dev/null || missing="$missing $t"
+      done
+      if [ -n "$missing" ]; then
+        echo "##vso[task.logissue type=error]Agent toolchain incomplete, missing:$missing. Fix bootstrap cloud-init in movies-infra and replace the agent."
+        exit 1
+      fi
+      echo "Agent toolchain OK"
+    displayName: Preflight (agent toolchain)
+
+  - script: gitleaks git --redact --verbose --exit-code 1 .
+    displayName: gitleaks (secret scanning)
+
+  # Includes yamllint rules and the playbook syntax check.
+  - script: ansible-lint
+    displayName: ansible-lint (production profile)
+
+  - script: npx --yes markdownlint-cli2@0.23.3 "**/*.md"
+    displayName: markdownlint (docs)

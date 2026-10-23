@@ -1,0 +1,11 @@
+---
+certbot_venv: /opt/certbot
+# Exact versions of the whole virtualenv: files/requirements.txt.
+
+certbot_domain: "{{ domain_name }}"
+certbot_dns_config: /etc/letsencrypt/movies-azure-dns.ini
+
+# true = Let's Encrypt staging (untrusted certificate, generous rate limits).
+# Use it while experimenting; production allows 5 identical certificates
+# per week, which matters if the environment is recreated often.
+certbot_staging: false

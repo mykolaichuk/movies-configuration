@@ -1,0 +1,3 @@
+---
+# Shared between roles (app_service listens here, nginx proxies here).
+movies_app_port: 3000

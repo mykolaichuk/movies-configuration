@@ -1,0 +1,19 @@
+# {{ ansible_managed }}
+# The NSG already limits port 22 to the agents subnet; this is the second layer.
+
+PermitRootLogin no
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+AuthenticationMethods publickey
+AllowUsers {{ common_ssh_allow_users | join(' ') }}
+
+X11Forwarding no
+AllowTcpForwarding no
+AllowAgentForwarding no
+PermitTunnel no
+
+MaxAuthTries 3
+LoginGraceTime 30
+ClientAliveInterval 300
+ClientAliveCountMax 2

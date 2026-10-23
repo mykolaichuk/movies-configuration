@@ -1,0 +1,85 @@
+# movies-configuration: configure the app VM and the database user
+#
+#   Validate   static checks (pipelines/templates/static-checks.yml)
+#   Preview    ansible-playbook --check --diff: what would change
+#   Configure  approval on environment 'movies-config', then the real run (main only)
+#
+# Chained after infra: every successful infra run on main triggers this
+# pipeline with its fresh 'stack-outputs' artifact. Every job runs on the
+# self-hosted agent: the app VM accepts SSH only from the agents subnet.
+
+name: config-$(Date:yyyyMMdd)$(Rev:.r)
+
+# Code changes only. Docs are checked by validate.yml without an approval.
+trigger:
+  branches:
+    include: [main]
+  paths:
+    exclude:
+      - "**/*.md"
+      - .markdownlint-cli2.jsonc
+      - pipelines/validate.yml
+
+# Azure Repos ignores YAML 'pr' triggers: PR runs come from branch policies.
+
+resources:
+  pipelines:
+    - pipeline: infra # alias used by 'download: infra'
+      source: infra # the NAME of the movies-infra/pipelines/infra.yml pipeline in Azure DevOps
+      trigger:
+        branches:
+          include: [main]
+
+parameters:
+  - name: forgetHostKey
+    displayName: Forget the app VM SSH host key (only after the VM was replaced)
+    type: boolean
+    default: false
+
+pool:
+  name: movies-pool
+
+variables:
+  ANSIBLE_CONFIG: $(Build.SourcesDirectory)/ansible.cfg
+  ANSIBLE_FORCE_COLOR: "true"
+  STACK_OUTPUTS: $(Pipeline.Workspace)/infra/stack-outputs/stack-outputs.json
+
+stages:
+  # ---------------------------------------------------------------------------
+  - stage: Validate
+    displayName: Validate and scan
+    jobs:
+      - job: static
+        displayName: Static checks
+        steps:
+          - template: templates/static-checks.yml
+
+  # ---------------------------------------------------------------------------
+  - stage: Preview
+    dependsOn: Validate
+    jobs:
+      - job: check
+        displayName: Dry run (--check --diff)
+        steps:
+          - checkout: self
+          - template: templates/run-playbook.yml
+            parameters:
+              mode: check
+              forgetHostKey: ${{ parameters.forgetHostKey }}
+
+  # ---------------------------------------------------------------------------
+  - stage: Configure
+    dependsOn: Preview
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - deployment: configure
+        displayName: ansible-playbook
+        environment: movies-config # approval check (movies-infra bootstrap/azdo.tf)
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - template: templates/run-playbook.yml
+                  parameters:
+                    mode: apply

@@ -1,0 +1,70 @@
+---
+- name: Install nginx
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+
+- name: Create the media cache directory
+  ansible.builtin.file:
+    path: "{{ nginx_media_cache_dir }}"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0700"
+
+- name: Create the static error page directory
+  ansible.builtin.file:
+    path: /var/www/movies
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# Shown while the app is not deployed yet or restarting (502/503/504).
+- name: Install the maintenance page
+  ansible.builtin.copy:
+    src: maintenance.html
+    dest: /var/www/movies/maintenance.html
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Write the nginx configuration
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - { src: movies-http.conf.j2, dest: /etc/nginx/conf.d/movies.conf }
+    - { src: movies-proxy.conf.j2, dest: /etc/nginx/snippets/movies-proxy.conf }
+    - { src: movies-security-headers.conf.j2, dest: /etc/nginx/snippets/movies-security-headers.conf }
+    - { src: movies-site.conf.j2, dest: /etc/nginx/sites-available/movies.conf }
+  loop_control:
+    label: "{{ item.dest }}"
+  notify: Reload nginx
+
+- name: Enable the movies site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/movies.conf
+    dest: /etc/nginx/sites-enabled/movies.conf
+    state: link
+  notify: Reload nginx
+
+- name: Disable the default site
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Reload nginx
+
+# Fail here, before the handler reloads a broken configuration.
+- name: Validate the nginx configuration
+  ansible.builtin.command: nginx -t
+  changed_when: false
+
+- name: Start nginx
+  ansible.builtin.systemd_service:
+    name: nginx
+    enabled: true
+    state: started

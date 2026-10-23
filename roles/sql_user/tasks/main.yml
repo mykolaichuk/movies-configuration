@@ -1,0 +1,69 @@
+---
+# Runs on the agent. The agent's managed identity is the Entra admin of the
+# SQL server (movies-infra/stack/data.tf); SQL logins and passwords do not exist.
+
+- name: Read the agent identity
+  ansible.builtin.set_fact:
+    sql_user_agent_client_id: "{{ lookup('ansible.builtin.env', 'AZURE_CLIENT_ID') }}"
+
+- name: Check that the agent identity is known
+  ansible.builtin.assert:
+    that: sql_user_agent_client_id | length > 0
+    fail_msg: AZURE_CLIENT_ID is empty. It comes from the agent's .env (bootstrap cloud-init).
+    quiet: true
+
+- name: Create the app user and its role memberships
+  block:
+    - name: Create a temporary SQL script
+      ansible.builtin.tempfile:
+        state: file
+        suffix: .sql
+      register: sql_user_script
+      check_mode: false
+
+    - name: Render the idempotent T-SQL script
+      ansible.builtin.template:
+        src: app-user.sql.j2
+        dest: "{{ sql_user_script.path }}"
+        mode: "0600"
+      check_mode: false
+
+    - name: Run the script against the database
+      ansible.builtin.command:
+        argv:
+          - sqlcmd
+          - -S
+          - "{{ sql.server_fqdn }}"
+          - -d
+          - "{{ sql.database }}"
+          - --authentication-method
+          - ActiveDirectoryManagedIdentity
+          - -U
+          - "{{ sql_user_agent_client_id }}"
+          - -N
+          - "true" # encrypt and validate the server certificate
+          - -l
+          - "60"
+          - -b # non-zero exit code on any SQL error
+          - -i
+          - "{{ sql_user_script.path }}"
+      register: sql_user_result
+      changed_when: "'CHANGED:' in sql_user_result.stdout"
+      retries: "{{ sql_user_retries }}"
+      delay: "{{ sql_user_retry_delay }}"
+      until: sql_user_result.rc == 0
+      # A dry run cannot preview T-SQL; the script itself is idempotent.
+      when: not ansible_check_mode
+
+    - name: Show what changed in the database
+      ansible.builtin.debug:
+        var: sql_user_result.stdout_lines
+      when: not ansible_check_mode and sql_user_result is changed
+
+  always:
+    - name: Remove the temporary SQL script
+      ansible.builtin.file:
+        path: "{{ sql_user_script.path }}"
+        state: absent
+      when: sql_user_script.path is defined
+      check_mode: false

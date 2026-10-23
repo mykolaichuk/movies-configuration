@@ -1,0 +1,11 @@
+---
+# Before the first deployment the units are skipped by ConditionPathExists,
+# so this is a harmless no-op.
+- name: Restart app services
+  ansible.builtin.systemd_service:
+    name: "{{ item.name }}"
+    state: restarted
+    daemon_reload: true
+  loop: "{{ app_service_units }}"
+  loop_control:
+    label: "{{ item.name }}"

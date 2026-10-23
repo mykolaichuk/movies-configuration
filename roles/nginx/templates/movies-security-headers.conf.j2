@@ -1,0 +1,9 @@
+# {{ ansible_managed }}
+# add_header is not inherited by a location that has its own add_header,
+# so every such location includes this file.
+# Content-Security-Policy is set by the app: it knows its YouTube and TMDB sources.
+add_header Strict-Transport-Security "max-age=31536000" always;
+add_header X-Content-Type-Options "nosniff" always;
+add_header X-Frame-Options "DENY" always;
+add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;

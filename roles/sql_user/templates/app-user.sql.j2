@@ -1,0 +1,35 @@
+-- {{ ansible_managed }}
+-- Idempotent: safe to run on every pipeline run.
+--
+-- The app VM's managed identity becomes a contained database user WITHOUT a
+-- Microsoft Graph lookup. 'FROM EXTERNAL PROVIDER' (with or without
+-- WITH OBJECT_ID) makes the SQL server resolve the principal in Entra ID
+-- with its own server identity and the Directory Readers role, a
+-- tenant-wide permission we deliberately do not grant. Instead the user is
+-- created from its SID: for a managed identity or service principal that is
+-- the CLIENT (application) ID, not the object ID, as binary(16).
+-- Trade-off: SQL does not validate the ID, so it must come from Terraform.
+SET NOCOUNT ON;
+
+IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'{{ app_identity.name }}')
+BEGIN
+    DECLARE @sid varbinary(16) = CAST(CAST('{{ app_identity.client_id }}' AS uniqueidentifier) AS varbinary(16));
+    DECLARE @sql nvarchar(max) =
+        N'CREATE USER [{{ app_identity.name }}] WITH SID = ' + CONVERT(nvarchar(64), @sid, 1) + N', TYPE = E;';
+    EXEC sp_executesql @sql;
+    PRINT 'CHANGED: created user {{ app_identity.name }}';
+END;
+{% for db_role in sql_user_roles %}
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.database_role_members AS rm
+    JOIN sys.database_principals AS r ON r.principal_id = rm.role_principal_id
+    JOIN sys.database_principals AS m ON m.principal_id = rm.member_principal_id
+    WHERE r.name = N'{{ db_role }}' AND m.name = N'{{ app_identity.name }}'
+)
+BEGIN
+    ALTER ROLE [{{ db_role }}] ADD MEMBER [{{ app_identity.name }}];
+    PRINT 'CHANGED: added {{ app_identity.name }} to {{ db_role }}';
+END;
+{% endfor %}

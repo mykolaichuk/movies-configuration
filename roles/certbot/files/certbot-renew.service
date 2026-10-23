@@ -1,0 +1,9 @@
+# Managed by Ansible (movies-configuration/roles/certbot)
+[Unit]
+Description=Renew Let's Encrypt certificates (DNS-01 via Azure DNS)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/certbot/bin/certbot renew --quiet

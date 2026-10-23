@@ -1,0 +1,13 @@
+---
+app_service_user: movies
+app_service_home: /opt/movies
+app_service_config_dir: /etc/movies
+
+# One release layout, two processes (see "Contract with movies-app" in README).
+app_service_units:
+  - name: movies-web
+    description: Movies web app (Express SSR)
+    entrypoint: src/web.js
+  - name: movies-worker
+    description: Movies worker (image jobs from the queue)
+    entrypoint: src/worker.js

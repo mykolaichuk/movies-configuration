@@ -1,0 +1,49 @@
+# {{ ansible_managed }}
+[Unit]
+Description={{ item.description }}
+After=network-online.target
+Wants=network-online.target
+# Nothing to run until the movies-app pipeline has deployed a release.
+ConditionPathExists={{ app_service_home }}/current/{{ item.entrypoint }}
+
+[Service]
+Type=simple
+User={{ app_service_user }}
+Group={{ app_service_user }}
+WorkingDirectory={{ app_service_home }}/current
+EnvironmentFile={{ app_service_config_dir }}/movies.env
+# Cloud role name in Application Insights: web and worker show up as two
+# separate nodes on the Application map instead of one.
+Environment=OTEL_SERVICE_NAME={{ item.name }}
+ExecStart=/usr/bin/node {{ item.entrypoint }}
+Restart=on-failure
+RestartSec=5
+# stdout/stderr -> journald; telemetry goes to Application Insights.
+SyslogIdentifier={{ item.name }}
+
+# Sandbox: the app reads its code and talks HTTPS/TDS, nothing else.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+UMask=0077
+# Not set on purpose: MemoryDenyWriteExecute breaks the V8 JIT.
+
+[Install]
+WantedBy=multi-user.target

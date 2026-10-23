@@ -1,0 +1,14 @@
+# Terraform outputs downloaded for a local lint/syntax check
+stack-outputs.json
+
+# Never commit keys (the Ansible SSH key lives only in Key Vault)
+*.pem
+*_key
+id_*
+
+# Ansible
+*.retry
+.ansible/
+
+# macOS
+.DS_Store

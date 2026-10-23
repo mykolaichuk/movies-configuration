@@ -1,0 +1,11 @@
+---
+# Least privilege: the app reads and writes data, it does not change the
+# schema. Migrations run from the agent (the SQL Entra admin) in the
+# movies-app pipeline.
+sql_user_roles:
+  - db_datareader
+  - db_datawriter
+
+# A serverless database that is paused takes up to a minute to resume.
+sql_user_retries: 5
+sql_user_retry_delay: 30

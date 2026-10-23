@@ -1,0 +1,4 @@
+---
+# Same major version as on the build agent (bootstrap cloud-init): the app is
+# tested where it is built and runs on the same runtime.
+nodejs_major: 24

@@ -1,0 +1,40 @@
+---
+# Always refresh the package index first: a fresh Azure image ships with a
+# stale one ("No package matching 'python3-venv'"). Also in the dry run
+# (check_mode: false): refreshing the index changes nothing on the system,
+# and without it --check cannot see packages that are not installed yet.
+- name: Refresh the package index
+  ansible.builtin.apt:
+    update_cache: true
+  changed_when: false
+  check_mode: false
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name: "{{ common_packages }}"
+    state: present
+
+# Security patches arrive daily without a pipeline run. No automatic reboot:
+# a kernel update waits for a planned restart (one VM = SPOF, see spof.md).
+- name: Enable unattended security upgrades
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      // Managed by Ansible (movies-configuration/roles/common)
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+    owner: root
+    group: root
+    mode: "0644"
+
+# sshd uses the first value it reads; '10-' sorts before Ubuntu's own
+# '50-cloud-init.conf', so these settings win.
+- name: Harden sshd
+  ansible.builtin.template:
+    src: sshd-hardening.conf.j2
+    dest: /etc/ssh/sshd_config.d/10-movies-hardening.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/sbin/sshd -t -f %s
+  notify: Reload sshd

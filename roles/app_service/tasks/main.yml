@@ -1,0 +1,71 @@
+---
+# Runtime environment only. The code itself is deployed by the movies-app
+# pipeline into releases/<build> with a 'current' symlink.
+
+- name: Create the service group
+  ansible.builtin.group:
+    name: "{{ app_service_user }}"
+    system: true
+
+- name: Create the service user (no shell, no login)
+  ansible.builtin.user:
+    name: "{{ app_service_user }}"
+    group: "{{ app_service_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ app_service_home }}"
+    create_home: false
+
+# Code is owned by root and only readable by the service: a compromised app
+# process cannot rewrite itself.
+- name: Create the release directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ app_service_home }}"
+    - "{{ app_service_home }}/releases"
+
+- name: Create the configuration directory
+  ansible.builtin.file:
+    path: "{{ app_service_config_dir }}"
+    state: directory
+    owner: root
+    group: "{{ app_service_user }}"
+    mode: "0750"
+
+# Non-secret settings only. Secrets are read by the app from Key Vault at
+# start-up with its managed identity; nothing secret is written to disk.
+- name: Write the environment file
+  ansible.builtin.template:
+    src: movies.env.j2
+    dest: "{{ app_service_config_dir }}/movies.env"
+    owner: root
+    group: "{{ app_service_user }}"
+    mode: "0640"
+  notify: Restart app services
+
+- name: Install the systemd units
+  ansible.builtin.template:
+    src: movies.service.j2
+    dest: "/etc/systemd/system/{{ item.name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ app_service_units }}"
+  loop_control:
+    label: "{{ item.name }}"
+  notify: Restart app services
+
+# Enabled now, started once the code exists (ConditionPathExists in the unit).
+- name: Enable the app services
+  ansible.builtin.systemd_service:
+    name: "{{ item.name }}"
+    enabled: true
+    daemon_reload: true
+  loop: "{{ app_service_units }}"
+  loop_control:
+    label: "{{ item.name }}"

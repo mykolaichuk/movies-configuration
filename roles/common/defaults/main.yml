@@ -1,0 +1,14 @@
+---
+common_packages:
+  - acl # lets Ansible become an unprivileged user safely
+  - ca-certificates
+  - curl
+  - gnupg
+  - python3-debian # required by ansible.builtin.deb822_repository
+  - python3-venv # certbot runs from its own virtualenv
+  - rsyslog # nginx -> syslog local7 -> Azure Monitor Agent
+  - unattended-upgrades
+
+# Only the Ansible account may log in over SSH.
+common_ssh_allow_users:
+  - "{{ ansible_user }}"

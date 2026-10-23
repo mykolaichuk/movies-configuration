@@ -1,0 +1,5 @@
+# {{ ansible_managed }}
+# No secret in this file: the plugin gets a token from the VM's managed
+# identity (IMDS). The client ID only selects which identity to use.
+dns_azure_msi_client_id = {{ app_identity.client_id }}
+dns_azure_zone1 = {{ dns_zone.name }}:{{ dns_zone.id | regex_replace('/providers/.*$', '') }}

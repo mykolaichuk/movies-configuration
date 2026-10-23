@@ -1,0 +1,35 @@
+# Lock file for the certbot virtualenv (pip freeze of a tested install).
+# The newest versions do not fit together, so every package is pinned:
+# - certbot-dns-azure 2.6.1 needs certbot 3.x and breaks with azure-mgmt-dns 9
+#   (DnsManagementClient.__init__ signature changed);
+# - certbot 3.x needs josepy 1.x, which breaks with pyOpenSSL 26 (X509Req removed).
+# All wheels exist for CPython 3.12 on linux/arm64 (Ubuntu 24.04 app VM).
+acme==3.3.0
+azure-common==1.1.28
+azure-core==1.41.0
+azure-identity==1.26.0
+azure-mgmt-core==1.6.0
+azure-mgmt-dns==8.2.0
+certbot==3.3.0
+certbot-dns-azure==2.6.1
+certifi==2026.10.18
+cffi==2.1.1
+charset-normalizer==3.5.2
+ConfigArgParse==1.8.0
+configobj==5.0.9
+cryptography==46.0.7
+distro==1.9.0
+idna==3.20
+isodate==0.7.2
+josepy==1.15.0
+msal==1.39.0
+msal-extensions==1.3.1
+parsedatetime==2.6
+pycparser==3.11
+PyJWT==2.15.1
+pyOpenSSL==25.3.0
+pyRFC3339==2.1.1
+pytz==2026.5
+requests==2.34.2
+typing_extensions==4.16.0
+urllib3==2.8.0

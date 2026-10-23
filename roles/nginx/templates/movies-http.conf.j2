@@ -1,0 +1,22 @@
+# {{ ansible_managed }}
+# http-level settings for the movies site (included by nginx.conf).
+
+server_tokens off;
+
+upstream movies_web {
+    server 127.0.0.1:{{ movies_app_port }};
+    keepalive 16;
+}
+
+# Video slices served by the app from Blob Storage (Range requests).
+proxy_cache_path {{ nginx_media_cache_dir }} levels=1:2 keys_zone=media:10m
+                 max_size={{ nginx_media_cache_size }} inactive={{ nginx_media_cache_inactive }}
+                 use_temp_path=off;
+
+limit_req_zone $binary_remote_addr zone=movies_auth:10m rate={{ nginx_auth_rate }};
+limit_req_status 429;
+
+# Combined format + request time + cache status, for the Grafana dashboard.
+log_format movies '$remote_addr - $remote_user [$time_local] "$request" '
+                  '$status $body_bytes_sent "$http_referer" "$http_user_agent" '
+                  'rt=$request_time cache=$upstream_cache_status';

@@ -1,0 +1,95 @@
+---
+# TLS certificate from Let's Encrypt with the DNS-01 challenge: certbot
+# writes a TXT record into the Azure DNS zone, signing in with the VM's
+# managed identity (DNS Zone Contributor on this zone only). No API token
+# anywhere, and no port 80 needed for validation.
+
+# Own virtualenv with a lock file: every dependency pinned, so a new
+# upstream release cannot break the next run. No conflict with system Python.
+- name: Copy the certbot lock file
+  ansible.builtin.copy:
+    src: requirements.txt
+    dest: /opt/certbot-requirements.txt
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install certbot and the Azure DNS plugin
+  ansible.builtin.pip:
+    requirements: /opt/certbot-requirements.txt
+    virtualenv: "{{ certbot_venv }}"
+    virtualenv_command: python3 -m venv
+
+- name: Put certbot on the PATH
+  ansible.builtin.file:
+    src: "{{ certbot_venv }}/bin/certbot"
+    dest: /usr/local/bin/certbot
+    state: link
+    force: true
+
+- name: Create the Let's Encrypt directory
+  ansible.builtin.file:
+    path: /etc/letsencrypt
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Write the DNS plugin configuration
+  ansible.builtin.template:
+    src: azure-dns.ini.j2
+    dest: "{{ certbot_dns_config }}"
+    owner: root
+    group: root
+    mode: "0600" # certbot refuses group/world-readable credential files
+
+# Runs once; renewals are handled by the systemd timer below.
+- name: Obtain the certificate
+  ansible.builtin.command:
+    argv: "{{ certbot_argv + (['--test-cert'] if certbot_staging | bool else []) }}"
+    creates: "/etc/letsencrypt/live/{{ certbot_domain }}/fullchain.pem"
+  vars:
+    certbot_argv:
+      - "{{ certbot_venv }}/bin/certbot"
+      - certonly
+      - --non-interactive
+      - --agree-tos
+      # Let's Encrypt no longer sends expiry e-mails; the timer renews.
+      - --register-unsafely-without-email
+      - --authenticator
+      - dns-azure
+      - --dns-azure-config
+      - "{{ certbot_dns_config }}"
+      - --preferred-challenges
+      - dns
+      - --cert-name
+      - "{{ certbot_domain }}"
+      - --domain
+      - "{{ certbot_domain }}"
+
+# Hooks in renewal-hooks/deploy run after every successful renewal.
+- name: Reload nginx after a renewal
+  ansible.builtin.copy:
+    src: reload-nginx.sh
+    dest: /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the renewal service and timer
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - certbot-renew.service
+    - certbot-renew.timer
+
+- name: Enable the renewal timer
+  ansible.builtin.systemd_service:
+    name: certbot-renew.timer
+    enabled: true
+    state: started
+    daemon_reload: true

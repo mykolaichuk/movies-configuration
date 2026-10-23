@@ -1,0 +1,11 @@
+---
+nginx_domain: "{{ domain_name }}"
+
+# Video cache on the OS disk (64 GB): openly licensed films, so caching
+# them on the VM exposes nothing.
+nginx_media_cache_dir: /var/cache/nginx/movies-media
+nginx_media_cache_size: 20g
+nginx_media_cache_inactive: 7d
+
+# Sign-in endpoints: per client IP.
+nginx_auth_rate: 10r/m

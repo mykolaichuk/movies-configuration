@@ -1,0 +1,48 @@
+---
+# movies-configuration: everything that happens inside the machines.
+#
+# Runs only on the self-hosted agent in the hub VNet (pipelines/configure.yml):
+# the app VM accepts SSH only from the agents subnet, and Azure SQL is
+# reachable only through its private endpoint.
+#
+# Terraform outputs (artifact 'stack-outputs' of the infra pipeline) arrive
+# as extra vars: --extra-vars @stack-outputs.json
+
+- name: Preflight
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Check that the Terraform outputs were passed in
+      ansible.builtin.assert:
+        that:
+          - domain_name is defined
+          - dns_zone is defined
+          - app_vm is defined
+          - app_identity is defined
+          - sql is defined
+          - storage is defined
+          - key_vault is defined
+          - entra_app is defined
+          - monitoring is defined
+        fail_msg: >-
+          Terraform outputs are missing (or the infra pipeline predates the
+          dns_zone output). Run with --extra-vars @stack-outputs.json from the
+          latest infra run.
+        quiet: true
+
+- name: Database user for the app identity (from the agent)
+  hosts: localhost
+  gather_facts: false
+  roles:
+    - role: sql_user
+
+- name: App VM
+  hosts: app
+  become: true
+  roles:
+    - role: common
+    - role: nodejs
+    - role: app_service
+    # Before nginx: the HTTPS server block needs the certificate files.
+    - role: certbot
+    - role: nginx

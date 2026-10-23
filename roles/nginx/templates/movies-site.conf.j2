@@ -1,0 +1,81 @@
+# {{ ansible_managed }}
+{% set cert_dir = '/etc/letsencrypt/live/' ~ nginx_domain %}
+
+# HTTP: redirect only. Certificates use DNS-01, so port 80 serves no challenge.
+server {
+    listen 80 default_server;
+    server_name _;
+    return 301 https://{{ nginx_domain }}$request_uri;
+}
+
+# HTTPS for any other host name (scanners hitting the IP): no certificate
+# is presented, the TLS handshake is refused.
+server {
+    listen 443 ssl http2 default_server;
+    ssl_reject_handshake on;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name {{ nginx_domain }};
+
+    ssl_certificate     {{ cert_dir }}/fullchain.pem;
+    ssl_certificate_key {{ cert_dir }}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:MoviesTLS:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    # Local file for a quick 'tail', syslog local7 for Azure Monitor (DCR).
+    access_log /var/log/nginx/movies.access.log movies;
+    access_log syslog:server=unix:/dev/log,facility=local7,tag=nginx,severity=info movies;
+    error_log  /var/log/nginx/movies.error.log warn;
+    error_log  syslog:server=unix:/dev/log,facility=local7,tag=nginx warn;
+
+    client_max_body_size 10m;
+
+    include snippets/movies-security-headers.conf;
+
+    # Answer 503 (temporary), not 502: browsers and monitors read it as "come back".
+    error_page 502 503 504 =503 /maintenance.html;
+    location = /maintenance.html {
+        root /var/www/movies;
+        internal;
+        include snippets/movies-security-headers.conf;
+    }
+
+    location = /healthz {
+        access_log off;
+        include snippets/movies-proxy.conf;
+    }
+
+    # Sign-in: rate-limited per client IP.
+    location /auth/ {
+        limit_req zone=movies_auth burst=10 nodelay;
+        include snippets/movies-proxy.conf;
+    }
+
+    # Videos and images: public, openly licensed content. Cached in 1 MB
+    # slices, so seeking in a film fetches only the missing part from the app.
+    location /media/ {
+        slice 1m;
+        proxy_cache media;
+        proxy_cache_key $uri$is_args$args$slice_range;
+        proxy_set_header Range $slice_range;
+        proxy_cache_valid 200 206 7d;
+        proxy_cache_lock on;
+        proxy_cache_use_stale error timeout updating http_502 http_503 http_504;
+        # Public content never carries a session.
+        proxy_ignore_headers Set-Cookie;
+        proxy_hide_header Set-Cookie;
+
+        include snippets/movies-proxy.conf;
+        include snippets/movies-security-headers.conf;
+        add_header X-Cache-Status $upstream_cache_status always;
+    }
+
+    location / {
+        include snippets/movies-proxy.conf;
+    }
+}

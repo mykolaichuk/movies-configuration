@@ -1,0 +1,27 @@
+# movies-configuration: static checks only (no Azure, no SSH, no approvals)
+#
+# Runs for documentation changes, which configure.yml deliberately ignores.
+# Also the pipeline to attach as the "Build validation" branch policy on
+# main, so every pull request is checked whatever it touches.
+
+name: validate-$(Date:yyyyMMdd)$(Rev:.r)
+
+trigger:
+  branches:
+    include: [main]
+  paths:
+    include:
+      - "**/*.md"
+      - .markdownlint-cli2.jsonc
+      - pipelines/validate.yml
+
+# Azure Repos ignores YAML 'pr' triggers: PR runs come from branch policies.
+
+pool:
+  name: movies-pool
+
+jobs:
+  - job: static
+    displayName: Static checks
+    steps:
+      - template: templates/static-checks.yml

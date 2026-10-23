@@ -1,0 +1,68 @@
+# Runs site.yml against the app VM (and the database, from the agent).
+# Used twice by configure.yml: as a dry run and as the approved run.
+
+parameters:
+  - name: mode
+    type: string
+    values: [check, apply]
+  - name: forgetHostKey
+    type: boolean
+    default: false
+
+steps:
+  # Terraform outputs of the latest successful infra run on main.
+  - download: infra
+    artifact: stack-outputs
+    displayName: Download stack-outputs (infra pipeline)
+
+  # Host keys are trusted on first use (ansible.cfg). A replaced VM has a new
+  # key, and SSH refuses it until the old one is forgotten. The agent is
+  # shared by both stages, so doing it once in the dry run is enough.
+  - ${{ if parameters.forgetHostKey }}:
+      - script: |
+          set -euo pipefail
+          IP=$(jq -r .app_vm.private_ip "$STACK_OUTPUTS")
+          ssh-keygen -R "$IP" || true
+        displayName: Forget the old app VM host key
+
+  # Workload identity federation (sc-movies-azure): reads the SSH key from
+  # Key Vault through its private endpoint. No credential is stored here.
+  - task: AzureCLI@2
+    displayName: ansible-playbook (${{ parameters.mode }})
+    # A dry run of a fresh VM cannot pass everything: a task may depend on a
+    # package that is "installed" only on paper. The approved run decides.
+    continueOnError: ${{ eq(parameters.mode, 'check') }}
+    inputs:
+      azureSubscription: sc-movies-azure
+      scriptType: bash
+      scriptLocation: inlineScript
+      workingDirectory: $(Build.SourcesDirectory)
+      inlineScript: |
+        set -euo pipefail
+
+        if [ ! -s "$STACK_OUTPUTS" ]; then
+          echo "##vso[task.logissue type=error]stack-outputs not found: run the infra pipeline on main first."
+          exit 1
+        fi
+        KV=$(jq -r .key_vault.name "$STACK_OUTPUTS")
+        KEY_NAME=$(jq -r .app_vm.ssh_key_name "$STACK_OUTPUTS")
+
+        # Private key -> job temp directory (owner-only), removed on exit;
+        # the agent also wipes Agent.TempDirectory after every job.
+        umask 077
+        KEY_FILE="$AGENT_TEMPDIRECTORY/ansible_ssh_key"
+        trap 'shred -u "$KEY_FILE" 2>/dev/null || rm -f "$KEY_FILE"' EXIT
+        az keyvault secret show --vault-name "$KV" --name "$KEY_NAME" \
+          --query value -o tsv > "$KEY_FILE"
+
+        args=()
+        if [ "$MODE" = check ]; then
+          args+=(--check --diff)
+        fi
+
+        ansible-playbook site.yml \
+          --private-key "$KEY_FILE" \
+          --extra-vars "@$STACK_OUTPUTS" \
+          "${args[@]}"
+    env:
+      MODE: ${{ parameters.mode }}

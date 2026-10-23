@@ -1,0 +1,7 @@
+---
+# ansible-lint configuration (DevSecOps stage in both pipelines).
+profile: production # strictest built-in profile: FQCN, names, modes, no risky shell
+offline: true # the agent has the collections; never reach Galaxy during a lint
+exclude_paths:
+  - .git/
+  - pipelines/ # Azure Pipelines YAML, not Ansible
